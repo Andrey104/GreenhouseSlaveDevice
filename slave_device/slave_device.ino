@@ -12,25 +12,144 @@
 
 #define ESP_TX                11 // ESP TX  (Arduino SoftwareSerial RX)
 #define ESP_RX                10 // ESP RX  (Arduino SoftwareSerial TX)
+#define DEVICE_ID             "1"
 
 SoftwareSerial espSerial(ESP_TX, ESP_RX);
 
+boolean espConnect = false;
+boolean wifiConnect = false;
+boolean tcpIsOpen = false;
+boolean mainDeviceConnected = false;
 void setup() {
       espSerial.begin(9600); 
-      // Модуль может не работать на такой скорости. В таком случае ему нужно передать AT+UART=9600,8,1,0,0
       
       if (DEBUG) {
         Serial.begin(9600);
         Serial.println("Debug mode!");
       }
 }
-espInit() {
-  
-}
 
 void loop() {
-  serialRetranslate();
+  esp();
+  //serialRetranslate();
 }
+
+void esp() {
+  if (!espConnect) { 
+    espInit(); 
+  }else {
+    if (!wifiConnect) {
+      espWifiConnection();
+    } else {
+      if (!mainDeviceConnected) {
+        mainDeviceConnect(DEVICE_ID);
+      }else { 
+        
+      }
+    }
+  }
+}
+
+void listenEspSerial() {
+  String str = "";
+  str = espRead();
+  // тут обработка всех команд, которые могут придти с esp.
+  // if (str == "") {} 
+}
+
+void espInit() {
+  delay(1000);
+  if (DEBUG) { Serial.println("--esp8622 init--"); }
+  espSerial.println("AT+RST");
+  espRead(1000);
+  if (!espSend("AT", "AT%%@%@OK%@", " ", 100)) { return; }
+  if (!espSend("AT+CWMODE=1", "AT+CWMODE=1%%@%@OK%@", " ", 100)) { return; }
+  if (!espSend("AT+CWDHCP=1,1", "AT+CWDHCP=1,1%%@%@OK%@", " ", 100)) { return; }
+  if (!espSend("AT+CIPMUX=1", "AT+CIPMUX=1%%@%@OK%@", " ", 100)) { return; }
+  espConnect = true;
+  if (DEBUG) { Serial.println("--esp8622 init OK--"); }
+}
+
+void espWifiConnection() {
+  if (DEBUG) { Serial.println("--WIFI connection--"); }
+  delay(1000);
+  if (!espSend("AT+CWJAP=\"GreenHouseMain\",\"main0000\"", 
+               "AT+CWJAP=\"GreenHouseMain\",\"main0000\"%%@WIFI DISCONNECT%@WIFI CONNECTED%@WIFI GOT IP%@%@OK%@", 
+               "AT+CWJAP=\"GreenHouseMain\",\"main0000\"%%@WIFI CONNECTED%@WIFI GOT IP%@%@OK%@", 
+               5000)) { return; }
+  if (DEBUG) { Serial.println("--WIFI connection OK--"); }
+  wifiConnect = true;
+}
+
+void mainDeviceConnect(char device_id) {
+  if (DEBUG) { Serial.println("--MD connect--"); }
+  delay(1000);
+  if (!tcpIsOpen) { tcpOpen(); }
+  if (!espSendMsg("00:" + device_id, "4")) { return; }
+  if (DEBUG) { Serial.println("--MD connect OK--"); }
+  mainDeviceConnected = true;
+}
+
+void tcpOpen() {
+  // Тут можно вынести ip главного устройства в define
+  if (DEBUG) { Serial.println("--TCP open--"); }
+  if (!espSend("AT+CIPSTART=0,\"TCP\",\"99.101.95.109\",8888", 
+               "AT+CIPSTART=0,\"TCP\",\"99.101.95.109\",8888%%@0,CONNECT%@%@OK%@",
+               "AT+CIPSTART=0,\"TCP\",\"99.101.95.109\",8888%%@ALREADY CONNECTED%@%@ERROR%@", 
+               500)) { return; }
+  if (DEBUG) { Serial.println("--TCP open OK--"); }
+  tcpIsOpen = true;
+}
+
+boolean espSendMsg(String msg, String msgLenght) {
+  delay(1000);
+  if (!espSend("AT+CIPSEND=0," + msgLenght, "AT+CIPSEND=0," + msgLenght + "%%@%@OK%@> ", " ", 100)) { return false; }
+  if (!espSend(msg, "@%%@busy s...%@%@Recv "+ msgLenght +" bytes%@%@SEND OK%@", " ", 300)) { return false; }
+  return true;
+}
+
+boolean espSend(String command, String response1, String response2, int readDelayCount) {
+  String str = "";
+  espSerial.println(command);
+  str = espRead(readDelayCount); 
+  if ((str == response1) || (str == response2)) {
+    if (DEBUG) {
+      Serial.print(command);
+      Serial.println(" ok");
+    }
+    return true;
+  }else {
+    if (DEBUG) {
+      Serial.print("ready1: ");
+      Serial.println(response1);
+      Serial.print(command);
+      Serial.println(" error");
+    }
+    return false;
+  }
+}
+
+String espRead(int delayCount) {
+  delay(delayCount);
+  String readStr = "";
+  int byteCount = espSerial.available();
+  if (byteCount > 0) {
+    while (espSerial.available() > 0){
+      char readByte = espSerial.read();
+      if (readByte == '\n') {
+        readByte = '@';
+      }
+      if (readByte == '\r') {
+        readByte = '%';
+      }
+      readStr = readStr + readByte;
+   }
+  }
+  Serial.print("read: ");
+  Serial.println(readStr);
+  return readStr;
+}
+
 
 void sensorsRequestTEST() { 
   delay(1000);
@@ -50,34 +169,33 @@ void lighting(boolean on) {
 }
 
 int readAnalogLight() {
-    int light = analogRead(LIGHT_SENSOR_PIN); // от 0 до 1024 - показания анлогового датчика
-    // Отладка------
+    int light = analogRead(LIGHT_SENSOR_PIN); 
+
     if (DEBUG) {
       Serial.println(light);
     }
-    // -------------
+
     return light;
 }
 int readAnalogTemp() {
-    int temp = analogRead(TEMP_SENSOR_PIN); // от 0 до 1024 - показания анлогового датчика
-    // Отладка------
+    int temp = analogRead(TEMP_SENSOR_PIN); 
+    
     if (DEBUG) {
       Serial.println(temp);
     }
-    // -------------
+
     return temp;
 }
 int readAnalogHuim() {
-    int huim = analogRead(HUIM_SENSOR_PIN); // от 0 до 1024 - показания анлогового датчика
-    // Отладка------
+    int huim = analogRead(HUIM_SENSOR_PIN); 
+
     if (DEBUG) {
       Serial.println(huim);
     }
-    // -------------
+
     return huim;
 }
 
-//Для отладки модулей работающих с AT командами, работает только в режиме отладки
 void serialRetranslate () { 
   if (DEBUG) {
     if ( espSerial.available() )
@@ -86,5 +204,8 @@ void serialRetranslate () {
     espSerial.write( Serial.read() );
   }
 }
+
+
+
 
 
