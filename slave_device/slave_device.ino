@@ -1,4 +1,5 @@
 #include <SoftwareSerial.h>
+#include <string.h>
 
 #define DEBUG                 true
 
@@ -12,7 +13,8 @@
 
 #define ESP_TX                11 // ESP TX  (Arduino SoftwareSerial RX)
 #define ESP_RX                10 // ESP RX  (Arduino SoftwareSerial TX)
-#define DEVICE_ID             "1"
+
+String deviceId = "1";
 
 SoftwareSerial espSerial(ESP_TX, ESP_RX);
 
@@ -22,7 +24,7 @@ boolean tcpIsOpen = false;
 boolean mainDeviceConnected = false;
 void setup() {
       espSerial.begin(9600); 
-      
+      String str = "123456789";
       if (DEBUG) {
         Serial.begin(9600);
         Serial.println("Debug mode!");
@@ -42,9 +44,9 @@ void esp() {
       espWifiConnection();
     } else {
       if (!mainDeviceConnected) {
-        mainDeviceConnect(DEVICE_ID);
+        mainDeviceConnect();
       }else { 
-        
+        listenEspSerial();
       }
     }
   }
@@ -52,9 +54,12 @@ void esp() {
 
 void listenEspSerial() {
   String str = "";
-  str = espRead();
+  str = espRead(1000);
   // тут обработка всех команд, которые могут придти с esp.
-  // if (str == "") {} 
+  if (!strstr(str.c_str(),"0,CLOSED") == NULL){
+      mainDeviceConnected = false;
+      tcpIsOpen = false;
+  }
 }
 
 void espInit() {
@@ -81,11 +86,11 @@ void espWifiConnection() {
   wifiConnect = true;
 }
 
-void mainDeviceConnect(char device_id) {
+void mainDeviceConnect() {
   if (DEBUG) { Serial.println("--MD connect--"); }
   delay(1000);
   if (!tcpIsOpen) { tcpOpen(); }
-  if (!espSendMsg("00:" + device_id, "4")) { return; }
+  if (!espSendMsg("00:" + deviceId, "4")) { return; }
   if (DEBUG) { Serial.println("--MD connect OK--"); }
   mainDeviceConnected = true;
 }
@@ -103,8 +108,8 @@ void tcpOpen() {
 
 boolean espSendMsg(String msg, String msgLenght) {
   delay(1000);
-  if (!espSend("AT+CIPSEND=0," + msgLenght, "AT+CIPSEND=0," + msgLenght + "%%@%@OK%@> ", " ", 100)) { return false; }
-  if (!espSend(msg, "@%%@busy s...%@%@Recv "+ msgLenght +" bytes%@%@SEND OK%@", " ", 300)) { return false; }
+  if (!espSend("AT+CIPSEND=0," + msgLenght, "AT+CIPSEND=0," + msgLenght + "%%@%@OK%@> ", " ", 300)) { return false; }
+  if (!espSend(msg, "%%@busy s...%@%@Recv " + msgLenght + " bytes%@%@SEND OK%@", "%%@Recv 4 bytes%@%@SEND OK%@", 300)) { return false; }
   return true;
 }
 
