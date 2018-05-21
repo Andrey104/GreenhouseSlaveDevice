@@ -47,6 +47,7 @@ void esp() {
         mainDeviceConnect();
       }else { 
         listenEspSerial();
+        sendSensorData();
       }
     }
   }
@@ -60,6 +61,20 @@ void listenEspSerial() {
       mainDeviceConnected = false;
       tcpIsOpen = false;
   }
+}
+
+void sendSensorData() { 
+  String light = (String)readAnalogLight();
+  String huim = "0456";
+  
+  espSendMsg("&S-L:"+stringL(light)+"-H:"+stringL(huim));
+}
+
+String stringL(String str) {
+  while (str.length() < 4) {
+    str = "0" + str;
+  }
+  return str;
 }
 
 void espInit() {
@@ -90,7 +105,7 @@ void mainDeviceConnect() {
   if (DEBUG) { Serial.println("--MD connect--"); }
   delay(1000);
   if (!tcpIsOpen) { tcpOpen(); }
-  if (!espSendMsg("00:" + deviceId, "4")) { return; }
+  if (!espSendMsg("&0:" + deviceId)) { return; }
   if (DEBUG) { Serial.println("--MD connect OK--"); }
   mainDeviceConnected = true;
 }
@@ -106,10 +121,11 @@ void tcpOpen() {
   tcpIsOpen = true;
 }
 
-boolean espSendMsg(String msg, String msgLenght) {
+boolean espSendMsg(String msg) {
+  String msgLength = (String)msg.length();;
   delay(1000);
-  if (!espSend("AT+CIPSEND=0," + msgLenght, "AT+CIPSEND=0," + msgLenght + "%%@%@OK%@> ", " ", 300)) { return false; }
-  if (!espSend(msg, "%%@busy s...%@%@Recv " + msgLenght + " bytes%@%@SEND OK%@", "%%@Recv 4 bytes%@%@SEND OK%@", 300)) { return false; }
+  if (!espSend("AT+CIPSEND=0," + msgLength, "AT+CIPSEND=0," + msgLength + "%%@%@OK%@> ", " ", 300)) { return false; }
+  if (!espSend(msg, "%%@busy s...%@%@Recv " + msgLength + " bytes%@%@SEND OK%@", "%%@Recv 4 bytes%@%@SEND OK%@", 300)) { return false; }
   return true;
 }
 
@@ -175,7 +191,6 @@ void lighting(boolean on) {
 
 int readAnalogLight() {
     int light = analogRead(LIGHT_SENSOR_PIN); 
-
     if (DEBUG) {
       Serial.println(light);
     }
